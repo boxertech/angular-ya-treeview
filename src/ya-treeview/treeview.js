@@ -1,7 +1,7 @@
 'use strict';
 
 angular.module('ya.treeview', [])
-    .factory('YaTreeviewService', function () {
+    .factory('YaTreeviewService', function ($q) {
         var service = {};
 
         var hasChildren = function (node, options) {
@@ -9,17 +9,23 @@ angular.module('ya.treeview', [])
         };
 
         service.children = function (node, options) {
+            var deferred = $q.defer();
             var children = node.$model[options.childrenKey];
             if (angular.isFunction(children)) {
-                return children();
+                $q.when(children()).then(function(children) {
+                    deferred.resolve(children);
+                });
             } else if (angular.isArray(children)) {
-                return children;
+                deferred.resolve(children);
             } else {
-                throw new Error('Children is neither an array nor a function.');
+                deferred.reject(new Error('Children is neither an array nor a function.'));
             }
+
+            return deferred.promise;
         };
 
         service.nodify = function (node, parent, options) {
+            var deferred = $q.defer();
             var vnode = {
                 $model: node,
                 $parent: parent,
@@ -29,27 +35,53 @@ angular.module('ya.treeview', [])
 
             if(vnode.$hasChildren) {
                 if (options.expanded) {
-                    var children = service.children(vnode, options);
-                    vnode.$children = service.nodifyArray(children, vnode, options);
+                    //var children = service.children(vnode, options);
+                    $q.when(service.children(vnode, options)).then(function(children){
+                        service.nodifyArray(children, vnode, options).then(function(returnChildren){
+                            vnode.$children = returnChildren;
+                            deferred.resolve(vnode);
+                        });
+                    });
+                    //vnode.$children = service.nodifyArray(children, vnode, options);
                 } else {
                     vnode.$children = [];
+                    deferred.resolve(vnode);
                 }
+            } else {
+                deferred.resolve(vnode);
             }
 
-            return vnode;
+            return deferred.promise; //vnode;
         };
 
         service.nodifyArray = function (nodes, parent, options) {
+            var deferred = $q.defer();
+            var nodePromises = [];
             var vnodes = [];
             angular.forEach(nodes, function (node) {
-                vnodes.push(service.nodify(node, parent, options));
+                var nodeDeferred = $q.defer();
+                //vnodes.push(service.nodify(node, parent, options));
+                service.nodify(node, parent, options).then(function(returnNode){
+                    vnodes.push(returnNode);
+                    nodeDeferred.resolve();
+                });
+
+                nodePromises.push(nodeDeferred);
             });
-            return vnodes;
+
+            $q.all(nodePromises).then(function(){
+                deferred.resolve(vnodes);
+            });
+            //return vnodes;
+
+            return deferred.promise;
         };
 
         return service;
     })
-    .controller('YaTreeviewCtrl', function ($scope, $timeout, YaTreeviewService) {
+    .controller('YaTreeviewCtrl', function ($scope, $timeout, YaTreeviewService, $q) {
+        var options;
+
         var fillOptions = function (clientOptions) {
             var options = {};
             clientOptions = clientOptions || {};
@@ -66,26 +98,74 @@ angular.module('ya.treeview', [])
         };
 
         var fillChildrenNodes = function (node, value) {
+            var deferred = $q.defer();
             if (node.$hasChildren) {
                 $timeout(function() {
                     angular.forEach(node.$children, function (node) {
                         if (node.$hasChildren) {
-                            var children = YaTreeviewService.children(node, options);
-                            node.$children = value || YaTreeviewService.nodifyArray(children, node, options);
+                            $q.when(YaTreeviewService.children(node, options)).then(function(children){
+                                node.$children = value || YaTreeviewService.nodifyArray(children, node, options);
+
+                                deferred.resolve();
+                            });
                         }
                     });
                 });
             }
+
+            return deferred.promise;
         };
 
         var createRootNode = function (nodes) {
+            var deferred = $q.defer();
             var node = {};
             node[options.childrenKey] = nodes;
-            var root = YaTreeviewService.nodify(node, null, options);
-            root.$children = YaTreeviewService.nodifyArray(nodes, root, options);
-            fillChildrenNodes(root);
-            root.collapsed = false;
-            return root;
+            //var root = YaTreeviewService.nodify(node, null, options);
+            YaTreeviewService.nodify(node, null, options).then(function(returnNode){
+                console.log('in createRootNode nodify response');
+                var root = returnNode;
+
+                //root.$children = YaTreeviewService.nodifyArray(nodes, root, options);
+                YaTreeviewService.nodifyArray(nodes, root, options).then(function(children){
+                    console.log('in createRootNode nodifyArray response');
+                    root.$children = children;
+
+                    //fillChildrenNodes(root);
+                    fillChildrenNodes(root).then(function(){
+                        root.collapsed = false;
+                        deferred.resolve(root);
+                    });
+                });
+
+            });
+
+//            $q.all(deferred).then(function(deferredResults){
+//                console.log('.all');
+//                console.log(deferredResults);
+//                return deferredResults[0];
+//            });
+            return deferred.promise;
+        };
+
+        $scope.init = function(){
+            var deferred = $q.defer();
+            options = fillOptions($scope.options);
+            options.expanded = false;
+  //        $scope.node = createRootNode($scope.model);
+            createRootNode($scope.model).then(function(rootNode){
+                console.log('rootNode: ');
+                console.log(rootNode);
+                $scope.node = rootNode;
+                $scope.context = $scope.context || {};
+                $scope.context.rootNode = $scope.node;
+                $scope.context.nodify = contextNodify;
+                $scope.context.nodifyArray = contextNodifyArray;
+                $scope.context.children = contextChildren;
+
+                deferred.resolve();
+            });
+
+            return deferred.promise;
         };
 
         $scope.toggle = function ($event, node) {
@@ -97,9 +177,14 @@ angular.module('ya.treeview', [])
         };
 
         $scope.expand = function ($event, node) {
-            fillChildrenNodes(node);
-            node.collapsed = false;
-            options.onExpand($event, node, $scope.context);
+            var deferred = $q.defer();
+            fillChildrenNodes(node).then(function(){
+                node.collapsed = false;
+                options.onExpand($event, node, $scope.context);
+                deferred.resolve();
+            });
+
+            return deferred.promise;
         };
 
         $scope.collapse = function ($event, node) {
@@ -120,22 +205,28 @@ angular.module('ya.treeview', [])
             options.onDblClick($event, node, $scope.context);
         };
 
-        var options = fillOptions($scope.options);
-        $scope.node = createRootNode($scope.model);
-        options.expanded = false;
-        $scope.context = $scope.context || {};
-        $scope.context.rootNode = $scope.node;
-
-        $scope.context.nodify = function (node, parent) {
-            return YaTreeviewService.nodify(node, parent, options);
+        var contextNodify = function (node, parent) {
+            var deferred = $q.defer();
+            YaTreeviewService.nodify(node, parent, options).then(function(returnNode){
+                deferred.resolve(returnNode);
+            });
+            return deferred.promise;
         };
 
-        $scope.context.nodifyArray = function (nodes, parent) {
-            return YaTreeviewService.nodifyArray(nodes, parent, options);
+        var contextNodifyArray = function (nodes, parent) {
+            var deferred = $q.defer();
+            YaTreeviewService.nodifyArray(nodes, parent, options).then(function(returnNodes){
+                deferred.resolve(returnNodes);
+            });
+            return deferred.promise;
         };
 
-        $scope.context.children = function (node) {
-            return YaTreeviewService.children(node, options);
+        var contextChildren = function (node) {
+            var deferred = $q.defer();
+            YaTreeviewService.children(node, options).then(function(returnChildren){
+                deferred.resolve(returnChildren);
+            });
+            return deferred.promise;
         };
 
         $scope.$watch('model', function (newValue, oldValue) {
@@ -147,6 +238,8 @@ angular.module('ya.treeview', [])
         $scope.$watch('context.selectedNode', function(node) {
             $scope.selectNode({}, node);
         });
+
+        $scope.init();
     })
     .directive('yaTreeview', function () {
         return {

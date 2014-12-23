@@ -262,21 +262,40 @@ angular.module('ya.treeview', [])
         };
     })
     .directive('yaNode', function ($compile) {
-        return {
-            restrict: 'AE',
-            replace: false,
-            scope: false,
-            templateUrl: 'templates/ya-treeview/children.tpl.html',
-            compile: function (tElement) {
-                var template = tElement.clone();
-                tElement.empty();
-                return function (scope, iElement) {
-                    if (scope.node.$hasChildren) {
-                        iElement.append($compile(template.html())(scope));
-                    }
-                };
+      return {
+        restrict: 'AE',
+        replace: false,
+        scope: false,
+        templateUrl: 'templates/ya-treeview/children.tpl.html',
+        compile: function (tElement) {
+          var template = tElement.clone();
+          tElement.empty();
+          return function (scope, iElement) {
+            if (scope.node.$hasChildren) {
+              iElement.append($compile(template.html())(scope));
             }
-        };
+          };
+        }
+      };
+    })
+    .directive('yaCollapseIcon', function ($compile) {
+      return {
+        restrict: 'AE',
+        replace: false,
+        scope: {
+            collapseIcon: '@collapseIcon'
+        },
+        templateUrl: 'templates/ya-treeview/icon.tpl.html',
+        compile: function (tElement) {
+          var template = tElement.clone();
+          tElement.empty();
+          return function (scope, iElement) {
+            if (scope.node.$hasChildren) {
+              iElement.append($compile(template.html())(scope));
+            }
+          };
+        }
+      };
     })
     .directive('yaTransclude', function () {
         return {

@@ -1,10 +1,16 @@
 <ul ng-hide="node.collapsed">
     <li class="node" ng-repeat="node in node.$children">
         <div ng-show="node.$hasChildren">
-            <a ng-show="node.collapsed" class="btn btn-link pull-left" ng-click="expand($event, node)"><i
-                    class="glyphicon glyphicon-chevron-right"></i></a>
-            <a ng-hide="node.collapsed" class="btn btn-link pull-left" ng-click="collapse($event, node)"><i
-                    class="glyphicon glyphicon-chevron-down"></i></a>
+            <a ng-show="node.collapsed" class="btn btn-link pull-left" ng-click="expand($event, node)">
+                <svg id="svgtest" viewBox="0 0 20 20" class="shape">
+                    <use xlink:href="#shape-collapse-right"></use>
+                </svg>
+            </a>
+            <a ng-hide="node.collapsed" class="btn btn-link pull-left" ng-click="collapse($event, node)">
+                <svg id="svgtest" viewBox="0 0 20 20" class="shape">
+                    <use xlink:href="#shape-collapse-down"></use>
+                </svg>
+            </a>
         </div>
         <div class="node-content" ya-transclude ng-click="selectNode($event, node)"
              ng-dblclick="dblClick($event, node)"></div>
